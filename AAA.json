@@ -1,0 +1,115 @@
+# Motorsport Data Engineering by Lorenzo Ferri
+
+Sito statico di analisi dati Formula 1 (passo gara, telemetria, strategia
+gomme). Il sito sta nella **radice** di questo repository e viene pubblicato
+con GitHub Pages in modalità "Deploy from a branch": nessun server, nessun
+costo, HTTPS automatico.
+
+---
+
+## Pubblicazione — procedura completa via browser (nessun comando)
+
+> Requisito non negoziabile: il repository deve essere **Public**.
+> GitHub Pages sul piano gratuito non funziona con repository privati
+> (fonte: https://docs.github.com/en/pages/getting-started-with-github-pages).
+
+### Passo 1 — Repository pulito
+
+Se hai già un repository con i file caricati alla rinfusa (tutti nella
+radice, senza cartelle): eliminalo e ricomincia da zero. È più rapido che
+correggerlo. Settings → in fondo, "Danger Zone" → **Delete this repository**.
+
+Poi: github.com → **New repository** →
+- Repository name: `motorsport-data-engineering` (senza spazi)
+- Visibilità: **Public**
+- NON spuntare "Add a README"
+- Create repository.
+
+### Passo 2 — Caricamento CON le cartelle (il punto critico)
+
+Nella pagina del nuovo repository, clicca il link **"uploading an existing
+file"**. Poi:
+
+1. Sul tuo PC, apri la cartella estratta dallo zip (`mde-site`).
+2. Seleziona **TUTTO il contenuto** della cartella (Ctrl+A): i file
+   `index.html`, `about.html`, `README.md` E le cartelle `css`, `js`,
+   `fonts`, `data`, `tools`, `.github`.
+3. **Trascina la selezione** nell'area di upload della pagina GitHub.
+   Trascinare le cartelle (non selezionare i file dal dialogo "scegli file")
+   è ciò che preserva la struttura: nell'anteprima di caricamento devi
+   vedere percorsi come `css/style.css`, `js/app.js`,
+   `data/0/esempio/R/pace.json` — non solo nomi di file.
+4. Scrivi un messaggio di commit qualsiasi e clicca **Commit changes**.
+
+Verifica subito: nella pagina del repository devi vedere le CARTELLE
+`css`, `data`, `fonts`, `js`, `tools`, `.github` come voci navigabili.
+Se vedi invece tutti i file sciolti allo stesso livello, il caricamento è
+avvenuto senza struttura: ripeti il passo 2 trascinando le cartelle.
+
+Nota su `.github`: su Windows la cartella è visibile normalmente. Se il
+trascinamento non la include, puoi creare il workflow a mano: nel
+repository → **Add file → Create new file** → nel campo del nome scrivi
+esattamente `.github/workflows/generate-data.yml` (le barre creano le
+cartelle) → incolla il contenuto del file omonimo dallo zip → Commit.
+
+### Passo 3 — Attiva GitHub Pages
+
+Repository → **Settings → Pages** →
+- Source: **Deploy from a branch**
+- Branch: `main` — cartella: `/ (root)` → **Save**
+
+Dopo 1–3 minuti il sito è online su:
+`https://TUO-UTENTE.github.io/motorsport-data-engineering/`
+(l'URL esatto compare nella stessa pagina Settings → Pages).
+
+A questo punto vedrai il sito funzionante con i **dati di esempio**
+(piloti fittizi AAA, BBB…, banner giallo ben visibile): sono sintetici e
+servono solo a dimostrare che tutto funziona.
+
+### Passo 4 — Genera i primi dati reali
+
+Repository → scheda **Actions** → se compare un avviso, clicca
+"I understand my workflows, go ahead and enable them" →
+workflow **"Genera dati sessione F1"** → **Run workflow** →
+compila anno (es. `2025`), GP (es. `Monza`), sessione (`R`, `Q`, `FP1`…
+oppure `ALL` per l'intero weekend) → **Run workflow**.
+
+Il primo run impiega 5–15 minuti (scarica 200–500 MB dai server del
+live-timing F1). Al termine committa i JSON in `data/` e GitHub Pages
+ripubblica automaticamente: i dati di esempio spariscono dall'elenco e
+compare la sessione reale.
+
+Da qui in poi, per ogni weekend di gara: Actions → Run workflow. Fine.
+
+### Passo 5 (opzionale) — Dominio personalizzato
+
+Registra un dominio (~10 €/anno, es. Cloudflare Registrar od OVH) e
+collegalo in Settings → Pages → Custom domain. HTTPS resta automatico.
+
+---
+
+## Struttura del repository
+
+```
+index.html, about.html      il sito (dashboard + pagina "Chi sono")
+css/, js/, fonts/           stili, logica, Plotly.js e font self-hosted
+data/                       JSON precalcolati (all'inizio: dati di esempio)
+tools/                      pipeline Python (usata solo da GitHub Actions)
+.github/workflows/          il workflow "Genera dati sessione F1"
+```
+
+## Note su dati e sicurezza
+
+- Fonte dati: FastF1 (https://docs.fastf1.dev), progetto non ufficiale non
+  affiliato a Formula One Licensing B.V. Telemetria disponibile dal 2018.
+- I dati di **assetto** (ali, sospensioni, mappe motore) NON esistono in
+  alcuna fonte pubblica: sono proprietà dei team. I canali mostrati
+  (velocità, RPM, acceleratore, freno, DRS) sono proxy indiretti.
+- Il sito pubblicato è interamente statico: nessun server applicativo
+  esposto, CSP rigorosa (`default-src 'self'`), nessuna richiesta a CDN o
+  terze parti (font e Plotly self-hosted; per i font, il caricamento da
+  Google Fonts esporrebbe l'IP dei visitatori — pratica giudicata in
+  violazione del GDPR dal Landgericht München I, sent. 20/01/2022,
+  causa 3 O 17493/20, se effettuata senza consenso).
+- La pagina `about.html` contiene segnaposto per i contatti
+  (email/LinkedIn/GitHub): sostituiscili con i tuoi recapiti reali.

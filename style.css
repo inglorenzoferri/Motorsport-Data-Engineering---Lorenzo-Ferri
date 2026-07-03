@@ -1,0 +1,364 @@
+"""
+f1_service.py
+--------------
+Livello di accesso ai dati Formula 1 tramite FastF1 (https://docs.fastf1.dev).
+
+FastF1 e' una libreria non ufficiale che espone i dati del live-timing F1
+(risultati, giri, telemetria, gomme, meteo) come DataFrame Pandas.
+Copertura telemetria/posizione: dal 2018 in poi. Copertura risultati/calendario:
+anche stagioni precedenti tramite l'API compatibile Ergast (jolpica-f1).
+
+Questo modulo:
+  1. Configura la cache locale obbligatoria di FastF1 (senza cache ogni
+     sessione richiede da 200 a 500 MB di download ad ogni esecuzione).
+  2. Espone funzioni pure che restituiscono strutture dati JSON-serializzabili
+     (niente Timedelta / Timestamp grezzi), cosi' il layer FastAPI in main.py
+     resta un sottile strato di routing.
+
+Nota sugli "assetti": FastF1 NON fornisce dati di setup (ali, mappe motore,
+sospensioni): sono dati proprietari dei team e non vengono mai pubblicati.
+Le funzioni di questo modulo ricavano solo proxy indiretti dell'assetto
+(velocita' di punta, uso DRS, velocita' in curva) a partire dalla telemetria.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from functools import lru_cache
+from typing import Any
+
+import fastf1
+import numpy as np
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Configurazione cache FastF1
+# ---------------------------------------------------------------------------
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+fastf1.Cache.enable_cache(CACHE_DIR)
+
+
+# ---------------------------------------------------------------------------
+# Validazione input (difesa in profondità — vedi OWASP API4:2023
+# "Unrestricted Resource Consumption": senza questi controlli, chiunque può
+# forzare il backend a scaricare centinaia di MB da F1 per ogni stringa
+# casuale passata come "evento", saturando banda, CPU e disco cache).
+# ---------------------------------------------------------------------------
+_VALID_SESSION_TYPES = {"FP1", "FP2", "FP3", "Q", "S", "R"}
+_DRIVER_CODE_RE = re.compile(r"^[A-Z]{3}$")
+_MIN_YEAR, _MAX_YEAR = 2018, 2026  # 2018: prima stagione con telemetria FastF1 completa
+
+
+class ValidationError(ValueError):
+    """Errore di validazione input — il layer API lo traduce in HTTP 400/404."""
+
+
+def validate_year(year: int) -> int:
+    if not (_MIN_YEAR <= year <= _MAX_YEAR):
+        raise ValidationError(
+            f"Anno non valido: {year}. Intervallo supportato {_MIN_YEAR}-{_MAX_YEAR}."
+        )
+    return year
+
+
+def validate_session_type(session_type: str) -> str:
+    st = session_type.upper().strip()
+    if st not in _VALID_SESSION_TYPES:
+        raise ValidationError(f"Tipo sessione non valido: {session_type!r}.")
+    return st
+
+
+def validate_driver_code(driver: str) -> str:
+    d = driver.upper().strip()
+    if not _DRIVER_CODE_RE.match(d):
+        raise ValidationError(f"Sigla pilota non valida: {driver!r} (attese 3 lettere, es. VER).")
+    return d
+
+
+def validate_event(year: int, event: str) -> str:
+    """
+    Verifica che 'event' corrisponda a un GP realmente presente nel calendario
+    di quella stagione, PRIMA di innescare un caricamento FastF1. Blocca input
+    arbitrari che altrimenti genererebbero comunque una richiesta costosa
+    verso i server F1 (e relativi log di errore).
+    """
+    event = event.strip()
+    if not event or len(event) > 60:
+        raise ValidationError("Nome evento mancante o troppo lungo.")
+    schedule = get_event_schedule(year)
+    needle = event.lower()
+    for row in schedule:
+        haystack = f"{row.get('EventName', '')} {row.get('Location', '')} {row.get('Country', '')}".lower()
+        if needle in haystack:
+            return event
+    raise ValidationError(f"Nessun evento corrispondente a {event!r} nel calendario {year}.")
+
+
+# ---------------------------------------------------------------------------
+# Utility di serializzazione
+# ---------------------------------------------------------------------------
+def _timedelta_to_seconds(value: Any) -> float | None:
+    """Converte un pandas.Timedelta (o NaT) in secondi float o None."""
+    if pd.isna(value):
+        return None
+    return round(value.total_seconds(), 3)
+
+
+def _clean_record(record: dict) -> dict:
+    """Sostituisce NaN/NaT con None e converte i Timedelta in secondi."""
+    cleaned = {}
+    for key, value in record.items():
+        if isinstance(value, pd.Timedelta):
+            cleaned[key] = _timedelta_to_seconds(value)
+        elif isinstance(value, (pd.Timestamp,)):
+            cleaned[key] = value.isoformat() if not pd.isna(value) else None
+        elif isinstance(value, float) and np.isnan(value):
+            cleaned[key] = None
+        elif pd.isna(value) if not isinstance(value, (list, dict)) else False:
+            cleaned[key] = None
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+def _df_to_records(df: pd.DataFrame) -> list[dict]:
+    return [_clean_record(r) for r in df.to_dict(orient="records")]
+
+
+# ---------------------------------------------------------------------------
+# Caricamento sessione (con cache in-process per evitare ricaricamenti)
+# ---------------------------------------------------------------------------
+@lru_cache(maxsize=16)
+def _load_session_cached(year: int, event: str, session_type: str, telemetry: bool, messages: bool):
+    session = fastf1.get_session(year, event, session_type)
+    session.load(telemetry=telemetry, weather=True, messages=messages)
+    return session
+
+
+def _load_session(year: int, event: str, session_type: str, telemetry: bool, messages: bool = False):
+    """
+    Carica una sessione FastF1, dopo aver validato tutti gli input contro
+    valori ammessi / il calendario reale della stagione (vedi validate_*).
+
+    session_type: 'FP1', 'FP2', 'FP3', 'Q', 'S', 'R'
+    event: nome del GP (es. 'Monza') — deve comparire nel calendario dell'anno.
+    """
+    validate_year(year)
+    validate_session_type(session_type)
+    validate_event(year, event)
+    return _load_session_cached(year, event, session_type, telemetry, messages)
+
+
+@lru_cache(maxsize=16)
+def _event_schedule_cached(year: int) -> list[dict]:
+    schedule = fastf1.get_event_schedule(year)
+    cols = [
+        "RoundNumber", "EventName", "Country", "Location",
+        "EventDate", "EventFormat",
+    ]
+    df = schedule[cols].copy()
+    return _df_to_records(df)
+
+
+def get_event_schedule(year: int) -> list[dict]:
+    """Calendario stagionale: nome GP, paese, date sessioni."""
+    validate_year(year)
+    return _event_schedule_cached(year)
+
+
+# ---------------------------------------------------------------------------
+# Passo gara / ritmo (race pace)
+# ---------------------------------------------------------------------------
+def get_race_pace(year: int, event: str, session_type: str = "R") -> list[dict]:
+    """
+    Ritmo gara per pilota: mediana, deviazione standard e numero di giri
+    validi (esclusi pit-in/out e giri sotto Safety Car/VSC quando marcati).
+    """
+    session = _load_session(year, event, session_type, telemetry=False)
+    laps = session.laps.pick_quicklaps() if hasattr(session.laps, "pick_quicklaps") else session.laps
+    laps = laps.copy()
+    laps = laps[laps["LapTime"].notna()]
+
+    grouped = laps.groupby("Driver")["LapTime"].agg(
+        median_laptime="median",
+        std_laptime="std",
+        n_laps="count",
+    ).reset_index()
+
+    grouped["median_laptime_s"] = grouped["median_laptime"].apply(_timedelta_to_seconds)
+    grouped["std_laptime_s"] = grouped["std_laptime"].apply(
+        lambda v: round(v.total_seconds(), 3) if pd.notna(v) else None
+    )
+    grouped = grouped.drop(columns=["median_laptime", "std_laptime"])
+    grouped = grouped.sort_values("median_laptime_s", na_position="last")
+    return _df_to_records(grouped)
+
+
+def get_lap_times(year: int, event: str, session_type: str, driver: str) -> list[dict]:
+    """Serie completa dei tempi sul giro per un pilota (per grafico evoluzione passo)."""
+    session = _load_session(year, event, session_type, telemetry=False)
+    laps = session.laps.pick_driver(driver).copy()
+    cols = ["LapNumber", "LapTime", "Compound", "TyreLife", "PitInTime", "PitOutTime", "TrackStatus"]
+    cols = [c for c in cols if c in laps.columns]
+    df = laps[cols].copy()
+    df["LapTime"] = df["LapTime"].apply(_timedelta_to_seconds)
+    return _df_to_records(df)
+
+
+# ---------------------------------------------------------------------------
+# Telemetria (confronto tra piloti sul giro veloce)
+# ---------------------------------------------------------------------------
+def get_telemetry_comparison(
+    year: int,
+    event: str,
+    session_type: str,
+    drivers: list[str],
+    lap: str = "fastest",
+) -> dict[str, list[dict]]:
+    """
+    Telemetria per ciascun pilota: velocita', RPM, acceleratore, freno,
+    marcia, DRS in funzione della distanza percorsa nel giro. Questi canali
+    sono il proxy piu' vicino all'assetto ottenibile da dati pubblici (es.
+    differenze di velocita' di punta possono indicare carico aerodinamico
+    differente).
+
+    lap: 'fastest' (default), oppure il numero di giro come stringa (es. '12').
+    """
+    drivers = [validate_driver_code(d) for d in drivers]
+    session = _load_session(year, event, session_type, telemetry=True)
+    result: dict[str, list[dict]] = {}
+    cols = ["Distance", "Speed", "RPM", "Throttle", "Brake", "nGear", "DRS"]
+
+    for drv in drivers:
+        drv_laps = session.laps.pick_driver(drv)
+        if drv_laps.empty:
+            result[drv] = []
+            continue
+
+        if lap == "fastest":
+            target_lap = drv_laps.pick_fastest()
+        else:
+            try:
+                lap_number = float(lap)
+            except ValueError as exc:
+                raise ValueError(f"Numero di giro non valido: {lap!r}") from exc
+            matching = drv_laps[drv_laps["LapNumber"] == lap_number]
+            if matching.empty:
+                result[drv] = []
+                continue
+            target_lap = matching.iloc[0]
+
+        tel = target_lap.get_car_data().add_distance()
+        available_cols = [c for c in cols if c in tel.columns]
+        result[drv] = _df_to_records(tel[available_cols])
+
+    return result
+
+
+def get_position_data(year: int, event: str, session_type: str, driver: str, lap: str = "fastest") -> list[dict]:
+    """
+    Dati di posizione GPS (X, Y, Z) sul giro indicato: usati per ricostruire
+    la traiettoria su una mappa del tracciato e, incrociati con la velocita',
+    per stimare punti di frenata e apice curva.
+    """
+    driver = validate_driver_code(driver)
+    session = _load_session(year, event, session_type, telemetry=True)
+    drv_laps = session.laps.pick_driver(driver)
+    if drv_laps.empty:
+        return []
+
+    if lap == "fastest":
+        target_lap = drv_laps.pick_fastest()
+    else:
+        lap_number = float(lap)
+        matching = drv_laps[drv_laps["LapNumber"] == lap_number]
+        if matching.empty:
+            return []
+        target_lap = matching.iloc[0]
+
+    pos = target_lap.get_pos_data().add_distance()
+    cols = [c for c in ["Distance", "X", "Y", "Z", "Status"] if c in pos.columns]
+    return _df_to_records(pos[cols])
+
+
+# ---------------------------------------------------------------------------
+# Strategia gomme
+# ---------------------------------------------------------------------------
+def get_tyre_strategy(year: int, event: str, session_type: str = "R") -> list[dict]:
+    """
+    Ricostruisce gli stint per ogni pilota: mescola, giro di inizio/fine,
+    numero di giri percorsi con quella mescola.
+    """
+    session = _load_session(year, event, session_type, telemetry=False)
+    laps = session.laps.copy()
+
+    stints = (
+        laps.groupby(["Driver", "Stint", "Compound"])
+        .agg(start_lap=("LapNumber", "min"), end_lap=("LapNumber", "max"), lap_count=("LapNumber", "count"))
+        .reset_index()
+        .sort_values(["Driver", "start_lap"])
+    )
+    return _df_to_records(stints)
+
+
+# ---------------------------------------------------------------------------
+# Meteo sessione (contesto utile per interpretare passo/gomme)
+# ---------------------------------------------------------------------------
+def get_weather(year: int, event: str, session_type: str) -> list[dict]:
+    session = _load_session(year, event, session_type, telemetry=False)
+    weather = session.weather_data.copy()
+    if "Time" in weather.columns:
+        weather["Time"] = weather["Time"].apply(_timedelta_to_seconds)
+    return _df_to_records(weather)
+
+
+# ---------------------------------------------------------------------------
+# Dati grezzi completi — per chi vuole analizzare con strumenti propri
+# (Excel, pandas, MATLAB) invece che tramite la dashboard.
+# ---------------------------------------------------------------------------
+def get_full_laps(year: int, event: str, session_type: str) -> list[dict]:
+    """
+    Tabella giri completa e non aggregata: settori (S1/S2/S3), trappole di
+    velocita' (SpeedI1/I2/FL/ST), mescola, eta' gomma, stato pista, flag di
+    giro cancellato/personal best. E' il dataset piu' completo che FastF1
+    espone senza scendere al livello della singola telemetria.
+    """
+    session = _load_session(year, event, session_type, telemetry=False)
+    laps = session.laps.copy()
+    time_cols = [c for c in laps.columns if laps[c].dtype == "timedelta64[ns]"]
+    for c in time_cols:
+        laps[c] = laps[c].apply(_timedelta_to_seconds)
+    return _df_to_records(laps)
+
+
+def get_session_results(year: int, event: str, session_type: str) -> list[dict]:
+    """Classifica della sessione: posizione, distacco, punti, stato di arrivo."""
+    session = _load_session(year, event, session_type, telemetry=False)
+    results = session.results.copy()
+    time_cols = [c for c in results.columns if results[c].dtype == "timedelta64[ns]"]
+    for c in time_cols:
+        results[c] = results[c].apply(_timedelta_to_seconds)
+    return _df_to_records(results)
+
+
+def get_track_status(year: int, event: str, session_type: str) -> dict[str, list[dict]]:
+    """Bandiere/regime di gara (track status) e messaggi di direzione gara."""
+    session = _load_session(year, event, session_type, telemetry=False, messages=True)
+    track_status = _df_to_records(session.track_status.copy())
+    try:
+        race_control = _df_to_records(session.race_control_messages.copy())
+    except Exception:  # noqa: BLE001 - non tutte le sessioni hanno messaggi
+        race_control = []
+    return {"track_status": track_status, "race_control_messages": race_control}
+
+
+def export_laps_csv(year: int, event: str, session_type: str) -> str:
+    """Restituisce la tabella giri completa come stringa CSV (per download)."""
+    session = _load_session(year, event, session_type, telemetry=False)
+    laps = session.laps.copy()
+    time_cols = [c for c in laps.columns if laps[c].dtype == "timedelta64[ns]"]
+    for c in time_cols:
+        laps[c] = laps[c].apply(lambda v: _timedelta_to_seconds(v))
+    return laps.to_csv(index=False)

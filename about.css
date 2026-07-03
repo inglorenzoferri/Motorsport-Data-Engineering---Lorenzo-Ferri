@@ -1,0 +1,144 @@
+"""
+generate_data.py
+----------------
+Pipeline che precalcola i dati di una sessione F1 e li salva come file JSON
+statici in frontend/data/. Il sito pubblicato su GitHub Pages legge questi
+file: nessun server da mantenere, nessun ricalcolo a ogni visita.
+
+Motivazione architetturale: i dati di una sessione F1 sono immutabili una
+volta conclusa la sessione. Precalcolarli una sola volta (qui) ed esporli
+come file statici elimina server, cold start e superficie di attacco.
+
+Uso:
+    python pipeline/generate_data.py --year 2025 --event Monza --session R
+    python pipeline/generate_data.py --year 2025 --event Monza --all-sessions
+
+Il primo run scarica 200-500 MB dai server del live-timing F1 (cache in
+backend/cache/); i run successivi sulla stessa sessione sono rapidi.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+# f1_service.py e' nella stessa cartella tools/.
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import f1_service  # noqa: E402
+
+DATA_DIR = ROOT / "data"
+SESSION_TYPES = ["FP1", "FP2", "FP3", "Q", "S", "R"]
+
+# Piloti principali per il confronto telemetrico precalcolato. La pipeline
+# genera comunque la telemetria di TUTTI i piloti presenti nella sessione:
+# questa lista definisce solo l'ordine di priorita' nell'interfaccia.
+DEFAULT_TELEMETRY_PAIR = ("VER", "LEC")
+
+
+def slugify(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def write_json(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, separators=(",", ":"), default=str)
+    print(f"  scritto {path.relative_to(ROOT)} ({path.stat().st_size / 1024:.0f} kB)")
+
+
+def generate_session(year: int, event: str, session_type: str) -> dict | None:
+    """Genera tutti i JSON di una sessione. Ritorna i metadati o None se la sessione non esiste."""
+    print(f"[{year} {event} {session_type}] elaborazione…")
+    try:
+        pace = f1_service.get_race_pace(year, event, session_type)
+    except Exception as exc:  # noqa: BLE001 - sessione inesistente (es. Sprint in un GP normale)
+        print(f"  saltata: {exc}")
+        return None
+
+    strategy = f1_service.get_tyre_strategy(year, event, session_type)
+    results = f1_service.get_session_results(year, event, session_type)
+    weather = f1_service.get_weather(year, event, session_type)
+    track = f1_service.get_track_status(year, event, session_type)
+    full_laps = f1_service.get_full_laps(year, event, session_type)
+
+    # Telemetria del giro veloce per ogni pilota classificato.
+    drivers = [r.get("Abbreviation") for r in results if r.get("Abbreviation")]
+    telemetry = f1_service.get_telemetry_comparison(year, event, session_type, drivers)
+
+    slug = slugify(event)
+    out = DATA_DIR / str(year) / slug / session_type
+    write_json(out / "pace.json", pace)
+    write_json(out / "strategy.json", strategy)
+    write_json(out / "results.json", results)
+    write_json(out / "weather.json", weather)
+    write_json(out / "track_status.json", track)
+    write_json(out / "laps.json", full_laps)
+    for drv, rows in telemetry.items():
+        if rows:
+            write_json(out / "telemetry" / f"{drv}.json", rows)
+
+    # CSV completo per l'analisi offline.
+    csv_text = f1_service.export_laps_csv(year, event, session_type)
+    csv_path = out / "laps.csv"
+    csv_path.write_text(csv_text, encoding="utf-8")
+    print(f"  scritto {csv_path.relative_to(ROOT)}")
+
+    return {
+        "year": year,
+        "event": event,
+        "slug": slug,
+        "session": session_type,
+        "drivers": [d for d, rows in telemetry.items() if rows],
+        "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "sample": False,
+    }
+
+
+def update_index(new_entries: list[dict]) -> None:
+    """Aggiorna frontend/data/index.json con le sessioni disponibili."""
+    index_path = DATA_DIR / "index.json"
+    existing: list[dict] = []
+    if index_path.exists():
+        existing = json.loads(index_path.read_text(encoding="utf-8"))
+    # Rimuovi eventuali dati di esempio e duplicati della stessa sessione.
+    keyfn = lambda e: (e["year"], e["slug"], e["session"])  # noqa: E731
+    existing = [e for e in existing if not e.get("sample")]
+    keys_new = {keyfn(e) for e in new_entries}
+    merged = [e for e in existing if keyfn(e) not in keys_new] + new_entries
+    merged.sort(key=lambda e: (-e["year"], e["slug"], e["session"]))
+    write_json(index_path, merged)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--year", type=int, required=True)
+    parser.add_argument("--event", type=str, required=True, help="Nome del GP, es. Monza")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--session", type=str, choices=SESSION_TYPES)
+    group.add_argument("--all-sessions", action="store_true",
+                       help="Genera tutte le sessioni esistenti del weekend")
+    args = parser.parse_args()
+
+    sessions = SESSION_TYPES if args.all_sessions else [args.session]
+    entries = []
+    for st in sessions:
+        meta = generate_session(args.year, args.event, st)
+        if meta:
+            entries.append(meta)
+
+    if not entries:
+        print("Nessuna sessione generata.")
+        return 1
+    update_index(entries)
+    print(f"Completato: {len(entries)} sessione/i aggiunte all'indice.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

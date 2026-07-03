@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chi sono — Motorsport Data Engineering by Lorenzo Ferri</title>
+<meta name="description" content="Chi sono e cosa faccio: automazione, controllo, robotica e analisi dati applicata alla Formula 1.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/about.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo">MOTORSPORT<span class="dot">·</span>DATA<span class="dot">·</span>ENGINEERING <span class="logo-by">by Lorenzo Ferri</span></div>
+  <nav>
+    <a href="index.html#pace">Passo gara</a>
+    <a href="index.html#telemetry">Telemetria</a>
+    <a href="index.html#advanced">Dati avanzati</a>
+    <a href="about.html" class="active">Chi sono</a>
+  </nav>
+</header>
+
+<main class="about">
+
+  <section class="about-hero">
+    <div class="eyebrow">Chi sono</div>
+    <h1>Lorenzo Ferri</h1>
+    <p class="role">Ingegnere in Automazione e Controllo · Analisi dati applicata alla Formula 1</p>
+    <p class="lede">
+      Studio i sistemi che tengono in equilibrio ciò che si muove veloce —
+      dagli osservatori distribuiti per sistemi multi-agente al passo gara
+      di una monoposto. Questo sito nasce dallo stesso approccio: dati reali,
+      metodo rigoroso, interpretazione da ingegnere.
+    </p>
+  </section>
+
+  <section class="about-grid">
+
+    <article class="about-card">
+      <h2><span class="index">01</span>Formazione</h2>
+      <ul>
+        <li>
+          <strong>Laurea Magistrale in Ingegneria dell'Automazione e dei Sistemi di Controllo (LM25)</strong>
+          — Università degli Studi dell'Aquila (UnivAQ).
+          Tesi sugli osservatori distribuiti per sistemi multi-agente lineari a tempo
+          discreto: Distributed Luenberger Observer (DLO), Distributed Unknown
+          Input Observer (DUIO) e resilienza ad attacchi FDI e DoS, con
+          simulazioni in MATLAB/Simulink.
+        </li>
+        <li>
+          <strong>MIT xPRO — Certificate Program in AI Product Design & Robotics Applications</strong>,
+          percorso su progettazione di prodotto AI applicata alla robotica.
+        </li>
+        <li>
+          In fase di candidatura alla Laurea Magistrale LM25 (Ingegneria
+          dell'Automazione) al Politecnico di Milano, per l'avvio a
+          febbraio 2027.
+        </li>
+      </ul>
+    </article>
+
+    <article class="about-card">
+      <h2><span class="index">02</span>Esperienza</h2>
+      <ul>
+        <li>
+          Tirocinio di 3 mesi presso l'ufficio tecnico elettronico di
+          un'azienda del settore automazione industriale.
+          <!-- MODIFICA QUI: nome azienda, se vuoi renderlo pubblico -->
+        </li>
+        <li>
+          Percorso di studio orientato a controllo avanzato, robotica e
+          sistemi multi-agente: cinematica industriale (diretta/inversa,
+          convenzione DH, Jacobiano), controllo PD con compensazione di
+          gravità, stabilità secondo Lyapunov/LaSalle.
+        </li>
+      </ul>
+    </article>
+
+    <article class="about-card">
+      <h2><span class="index">03</span>Cosa cerco</h2>
+      <p>
+        Obiettivo di carriera orientato a opportunità internazionali,
+        in particolare nel Nord Europa (area di Eindhoven), in ruoli di
+        automazione, controllo e robotica dove rigore analitico e capacità
+        di modellazione facciano la differenza.
+      </p>
+    </article>
+
+    <article class="about-card">
+      <h2><span class="index">04</span>Perché la Formula 1</h2>
+      <p>
+        La Formula 1 è uno dei pochi contesti dove ingegneria di controllo,
+        dati ad alta frequenza e decisioni in tempo reale convivono nello
+        stesso sistema. Questo sito è il punto in cui unisco la mia
+        formazione in automazione e controllo con l'interesse per l'analisi
+        quantitativa delle prestazioni in pista — passo gara, telemetria,
+        strategia gomme — usando strumenti costruiti da me sopra dati
+        pubblici verificati (FastF1).
+      </p>
+    </article>
+
+  </section>
+
+  <section class="about-contact">
+    <h2>Contatti</h2>
+    <!-- MODIFICA QUI: sostituisci con i tuoi recapiti reali -->
+    <ul class="contact-list">
+      <li>Email: <a href="mailto:nome@esempio.it">nome@esempio.it</a></li>
+      <li>LinkedIn: <a href="https://www.linkedin.com/in/tuo-profilo" rel="noopener noreferrer" target="_blank">linkedin.com/in/tuo-profilo</a></li>
+      <li>GitHub: <a href="https://github.com/tuo-utente" rel="noopener noreferrer" target="_blank">github.com/tuo-utente</a></li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  Dati F1 di questo sito: FastF1 (progetto non ufficiale, non affiliato a
+  Formula One Licensing B.V.). Font e librerie JS sono serviti dallo stesso
+  dominio del sito, senza richieste a CDN di terze parti.
+</footer>
+
+</body>
+</html>
