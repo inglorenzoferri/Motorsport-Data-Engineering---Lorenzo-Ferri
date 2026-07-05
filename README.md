@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="logo.png" alt="Logo LF — Motorsport Data Engineering" width="160">
+<img src="logo.png" alt="Logo LF — Motorsport Data Engineering" width="180">
 
 # Motorsport Data Engineering
 ### by Lorenzo Ferri
