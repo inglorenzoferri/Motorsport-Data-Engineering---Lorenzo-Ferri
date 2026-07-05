@@ -11,7 +11,7 @@ letti con il metodo di un ingegnere dell'automazione.*
 ![Sito statico](https://img.shields.io/badge/architettura-sito%20statico-B32020)
 ![Dati](https://img.shields.io/badge/dati-FastF1%20(dal%202018)-1b1f24)
 ![Hosting](https://img.shields.io/badge/hosting-GitHub%20Pages-4a90a4)
-![Costo](https://img.shields.io/badge/costo%20di%20esercizio-0%20%E2%82%AC-6b9b5e)
+
 
 **[➜ Apri il sito](https://inglorenzoferri.github.io/Motorsport-Data-Engineering---Lorenzo-Ferri/)**
 
