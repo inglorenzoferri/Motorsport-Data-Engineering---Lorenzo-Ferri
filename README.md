@@ -82,10 +82,8 @@ i dati, li committa e il sito si aggiorna automaticamente.
 
 ## Autore
 
-**Lorenzo Ferri** — laureando magistrale in Ingegneria dell'Automazione e
-dei Sistemi di Controllo (LM25), con tesi sugli osservatori distribuiti per
-sistemi multi-agente e certificazione MIT xPRO in AI Product Design &
-Robotics Applications. La pagina *Chi sono* del sito racconta il resto.
+**Lorenzo Ferri** —Ingegnere dell'Automazione e
+dei Sistemi di Controllo. La pagina *Chi sono* del sito racconta il resto.
 
 ## Note legali
 
