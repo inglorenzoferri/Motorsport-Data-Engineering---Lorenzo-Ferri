@@ -65,8 +65,7 @@ i dati, li committa e il sito si aggiorna automaticamente.
   senso proprio (angoli alari, setup sospensioni, mappe motore) sono
   proprietà riservata dei team. I canali mostrati qui (velocità, RPM,
   acceleratore, freno, DRS) sono **proxy indiretti** derivati dalla
-  telemetria pubblica — questo sito lo dichiara esplicitamente invece di
-  fingere il contrario.
+  telemetria pubblica.
 
 ## Scelte tecniche di sicurezza e privacy
 
