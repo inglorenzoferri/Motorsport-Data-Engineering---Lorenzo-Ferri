@@ -74,11 +74,6 @@ i dati, li committa e il sito si aggiorna automaticamente.
   database, nessun input elaborato lato server.
 - **Content-Security-Policy** rigorosa (`default-src 'self'`): il browser
   del visitatore non contatta alcuna terza parte.
-- **Font e Plotly.js self-hosted**, nessun CDN: elimina il rischio di
-  supply-chain e non espone l'indirizzo IP dei visitatori a servizi
-  esterni (il caricamento di font da Google Fonts senza consenso è stato
-  giudicato in violazione del GDPR — Landgericht München I, sent.
-  20/01/2022, causa 3 O 17493/20).
 - Nessun cookie, nessun tracciamento, nessuna pubblicità.
 
 ## Stack
